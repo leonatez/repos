@@ -48,7 +48,7 @@ export default function EditPost() {
           setSummaryEn(found.summary_en || '')
           setContentVi(found.content_markdown_vi || '')
           setContentEn(found.content_markdown_en || '')
-          setTags((found.tags || []).map((t) => t.name).join(', '))
+          setTags((found.tags || []).map((t: { name: string }) => t.name).join(', '))
         }
       })
       .catch(console.error)
