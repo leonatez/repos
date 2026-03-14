@@ -6,16 +6,36 @@ on:
       - main
 
 jobs:
-  deploy:
+  deploy-backend:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Trigger backend deploy
-        run: |
-          curl --silent --fail -X POST \
-            "${{ secrets.CAPROVER_SERVER_URL }}/api/v2/user/apps/webhooks/triggerbuild?namespace=captain&token=${{ secrets.CAPROVER_BACKEND_TOKEN }}"
+      - uses: actions/checkout@v4
 
-      - name: Trigger frontend deploy
+      - name: Install CapRover CLI
+        run: npm install -g caprover
+
+      - name: Package and deploy backend
         run: |
-          curl --silent --fail -X POST \
-            "${{ secrets.CAPROVER_SERVER_URL }}/api/v2/user/apps/webhooks/triggerbuild?namespace=captain&token=${{ secrets.CAPROVER_FRONTEND_TOKEN }}"
+          tar -czf /tmp/backend.tar.gz -C backend .
+          caprover deploy \
+            --caproverUrl ${{ secrets.CAPROVER_SERVER_URL }} \
+            --caproverPassword ${{ secrets.CAPROVER_PASSWORD }} \
+            --appName repos-backend \
+            --tarFile /tmp/backend.tar.gz
+
+  deploy-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install CapRover CLI
+        run: npm install -g caprover
+
+      - name: Package and deploy frontend
+        run: |
+          tar -czf /tmp/frontend.tar.gz -C frontend .
+          caprover deploy \
+            --caproverUrl ${{ secrets.CAPROVER_SERVER_URL }} \
+            --caproverPassword ${{ secrets.CAPROVER_PASSWORD }} \
+            --appName repos-frontend \
+            --tarFile /tmp/frontend.tar.gz
