@@ -1,0 +1,95 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    @apply bg-bg-primary text-text-primary font-sans;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-bg-secondary;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-bg-tertiary rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-border-light;
+  }
+
+  /* Selection color */
+  ::selection {
+    @apply bg-accent/30 text-text-primary;
+  }
+}
+
+@layer components {
+  .prose-custom h1 { @apply text-3xl font-bold text-text-primary mt-8 mb-4; }
+  .prose-custom h2 { @apply text-2xl font-bold text-text-primary mt-8 mb-4 border-b border-border pb-2; }
+  .prose-custom h3 { @apply text-xl font-semibold text-text-primary mt-6 mb-3; }
+  .prose-custom p  { @apply text-slate-300 leading-relaxed mb-4; }
+  .prose-custom a  { @apply text-accent hover:text-accent-light underline; }
+  .prose-custom ul { @apply list-none mb-4; }
+  .prose-custom li { @apply text-slate-300 flex items-start gap-2 mb-1; }
+  .prose-custom code { @apply bg-bg-tertiary text-teal-300 px-1.5 py-0.5 rounded text-sm font-mono; }
+  .prose-custom pre { @apply bg-bg-secondary border border-border rounded-xl p-4 overflow-x-auto my-4; }
+  .prose-custom blockquote { @apply border-l-4 border-accent pl-4 text-text-secondary italic my-4; }
+  .prose-custom hr  { @apply border-border my-8; }
+}
+
+@layer utilities {
+  .line-clamp-1 {
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .line-clamp-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* Animated gradient border */
+  .glow-border {
+    position: relative;
+  }
+
+  .glow-border::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    background: linear-gradient(135deg, #14b8a6, #0f172a, #14b8a6);
+    z-index: -1;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+
+  .glow-border:hover::before {
+    opacity: 1;
+  }
+}
