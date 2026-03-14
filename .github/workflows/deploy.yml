@@ -20,7 +20,7 @@ jobs:
           caprover deploy \
             --caproverUrl ${{ secrets.CAPROVER_SERVER_URL }} \
             --caproverPassword ${{ secrets.CAPROVER_PASSWORD }} \
-            --appName repos-backend \
+            --appName repos-api \
             --tarFile /tmp/backend.tar.gz
 
   deploy-frontend:
