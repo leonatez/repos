@@ -1,0 +1,21 @@
+name: Deploy to CapRover
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Trigger backend deploy
+        run: |
+          curl --silent --fail -X POST \
+            "${{ secrets.CAPROVER_SERVER_URL }}/api/v2/user/apps/webhooks/triggerbuild?namespace=captain&token=${{ secrets.CAPROVER_BACKEND_TOKEN }}"
+
+      - name: Trigger frontend deploy
+        run: |
+          curl --silent --fail -X POST \
+            "${{ secrets.CAPROVER_SERVER_URL }}/api/v2/user/apps/webhooks/triggerbuild?namespace=captain&token=${{ secrets.CAPROVER_FRONTEND_TOKEN }}"
