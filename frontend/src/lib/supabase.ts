@@ -9,4 +9,37 @@ if (!supabaseUrl || !supabaseAnonKey) {
   )
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+const COOKIE_MAX_AGE = 60 * 60 * 24 * 30 // 30 days in seconds
+
+function getCookie(name: string): string | null {
+  const match = document.cookie.match(new RegExp('(?:^|;\\s*)' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '=([^;]*)'))
+  return match ? decodeURIComponent(match[1]) : null
+}
+
+function setCookie(name: string, value: string) {
+  document.cookie = `${name}=${encodeURIComponent(value)};max-age=${COOKIE_MAX_AGE};path=/;SameSite=Lax`
+}
+
+function deleteCookie(name: string) {
+  document.cookie = `${name}=;max-age=0;path=/`
+}
+
+const cookieStorage = {
+  getItem(key: string): string | null {
+    return getCookie(key)
+  },
+  setItem(key: string, value: string): void {
+    setCookie(key, value)
+  },
+  removeItem(key: string): void {
+    deleteCookie(key)
+  },
+}
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    storage: cookieStorage,
+    persistSession: true,
+    autoRefreshToken: true,
+  },
+})
