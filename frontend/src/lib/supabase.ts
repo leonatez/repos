@@ -11,13 +11,20 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 30 // 30 days in seconds
 
+const isSecure = typeof location !== 'undefined' && location.protocol === 'https:'
+
 function getCookie(name: string): string | null {
-  const match = document.cookie.match(new RegExp('(?:^|;\\s*)' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '=([^;]*)'))
-  return match ? decodeURIComponent(match[1]) : null
+  try {
+    const match = document.cookie.match(new RegExp('(?:^|;\\s*)' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '=([^;]*)'))
+    return match ? decodeURIComponent(match[1]) : null
+  } catch {
+    return null
+  }
 }
 
 function setCookie(name: string, value: string) {
-  document.cookie = `${name}=${encodeURIComponent(value)};max-age=${COOKIE_MAX_AGE};path=/;SameSite=Lax`
+  const secure = isSecure ? ';Secure' : ''
+  document.cookie = `${name}=${encodeURIComponent(value)};max-age=${COOKIE_MAX_AGE};path=/;SameSite=Lax${secure}`
 }
 
 function deleteCookie(name: string) {
