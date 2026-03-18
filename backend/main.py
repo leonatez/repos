@@ -15,7 +15,7 @@ logging.basicConfig(
 logger = logging.getLogger("app")
 
 app = FastAPI(
-    title="AI GitHub Repo Digest API",
+    title="Repos API",
     description="Converts GitHub repos into structured bilingual blog articles (Vietnamese + English)",
     version="1.0.0",
 )
@@ -61,13 +61,13 @@ app.include_router(favorites.router)
 
 @app.get("/health")
 async def health_check():
-    return {"status": "ok", "service": "AI GitHub Repo Digest API"}
+    return {"status": "ok", "service": "Repos API"}
 
 
 @app.get("/")
 async def root():
     return {
-        "message": "AI GitHub Repo Digest API",
+        "message": "Repos API",
         "version": "1.0.0",
         "docs": "/docs",
     }

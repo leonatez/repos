@@ -29,7 +29,7 @@ export default function Navbar() {
               <Github className="w-5 h-5 text-bg-primary" />
             </div>
             <span className="font-bold text-text-primary text-lg hidden sm:block">
-              <span className="text-accent">AI</span> Digest
+              Repos
             </span>
           </Link>
 

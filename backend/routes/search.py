@@ -18,9 +18,11 @@ async def search_posts(
     Search published posts by title (VI/EN), summary (VI/EN), or tags.
     Uses ILIKE for case-insensitive partial matching.
     """
-    user = await get_optional_user(authorization)
-    user_id = user["id"] if user else None
-    keyword = f"%{q}%"
+    await get_optional_user(authorization)
+    # PostgREST uses * as wildcard in or() URL filters, not %
+    keyword = f"*{q}*"
+    # SQL ILIKE uses % as wildcard (for direct .ilike() calls)
+    sql_keyword = f"%{q}%"
 
     try:
         # Search by title_en, title_vi, summary_en, summary_vi
@@ -45,7 +47,7 @@ async def search_posts(
         tag_result = (
             supabase.table("tags")
             .select("id")
-            .ilike("name", keyword)
+            .ilike("name", sql_keyword)
             .execute()
         )
         matching_tag_ids = [t["id"] for t in tag_result.data]

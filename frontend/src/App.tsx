@@ -20,7 +20,7 @@ function Layout({ children }: { children: React.ReactNode }) {
       <footer className="border-t border-border mt-16 py-8">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <p className="text-text-muted text-sm">
-            &copy; {new Date().getFullYear()} AI GitHub Repo Digest. Powered by Claude AI.
+            &copy; {new Date().getFullYear()} Repos. Powered by Claude AI.
           </p>
         </div>
       </footer>
