@@ -61,9 +61,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   useEffect(() => {
-    // Get initial session
+    // Flag to skip the initial onAuthStateChange event fired during hydration.
+    // With custom cookie storage the client fires SIGNED_IN before it has fully
+    // set its internal token state, causing subsequent DB queries to stall.
+    // getSession() waits for full hydration, so we let it own the initial load.
+    let initialSessionHandled = false
+
+    // Own the initial session load — getSession() fully hydrates the client
+    // before returning, so DB queries in fetchUserProfile work reliably.
     supabase.auth.getSession().then(({ data: { session }, error }) => {
       console.log('[Auth] getSession —', session ? `user: ${session.user.email}` : 'no session', error ? `error: ${error.message}` : '')
+      initialSessionHandled = true
       setAuthToken(session?.access_token ?? null)
       setSession(session)
       if (session?.user) {
@@ -73,12 +81,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     })
 
-    // Listen for auth changes
+    // Handle auth changes after initial load (login, logout, token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         console.log('[Auth] onAuthStateChange —', event, session ? `user: ${session.user.email}` : 'no session')
+
+        // Skip events fired during hydration — getSession() owns the initial load
+        if (!initialSessionHandled || event === 'INITIAL_SESSION') return
+
         setAuthToken(session?.access_token ?? null)
         setSession(session)
+
+        // Token refreshed in background — update token only, profile unchanged
+        if (event === 'TOKEN_REFRESHED') return
+
         if (session?.user) {
           await fetchUserProfile(session.user)
         } else {
