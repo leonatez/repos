@@ -19,40 +19,36 @@ async def search_posts(
     Uses ILIKE for case-insensitive partial matching.
     """
     await get_optional_user(authorization)
-    # PostgREST uses * as wildcard in or() URL filters, not %
-    keyword = f"*{q}*"
-    # SQL ILIKE uses % as wildcard (for direct .ilike() calls)
-    sql_keyword = f"%{q}%"
+    # Use % wildcard with direct .ilike() calls to avoid PostgREST or() encoding
+    # issues with Cloudflare (both % and * fail in or() URL filters via Supabase hosted API)
+    keyword = f"%{q}%"
 
     try:
-        # Search by title_en, title_vi, summary_en, summary_vi
-        result = (
-            supabase.table("posts")
-            .select(
-                "*, github_repositories(id, repo_name, github_url), post_tags(tags(id, name, slug))"
+        # Search by title_en, title_vi, summary_en, summary_vi using separate ilike queries
+        post_map: dict = {}
+        select_fields = "*, github_repositories(id, repo_name, github_url), post_tags(tags(id, name, slug))"
+        for field in ["title_en", "title_vi", "summary_en", "summary_vi"]:
+            r = (
+                supabase.table("posts")
+                .select(select_fields)
+                .eq("status", "published")
+                .ilike(field, keyword)
+                .order("published_at", desc=True)
+                .execute()
             )
-            .eq("status", "published")
-            .or_(
-                f"title_en.ilike.{keyword},"
-                f"title_vi.ilike.{keyword},"
-                f"summary_en.ilike.{keyword},"
-                f"summary_vi.ilike.{keyword}"
-            )
-            .order("published_at", desc=True)
-            .range(offset, offset + limit - 1)
-            .execute()
-        )
+            for p in r.data:
+                if p["id"] not in post_map:
+                    post_map[p["id"]] = p
 
         # Also search by tag name
         tag_result = (
             supabase.table("tags")
             .select("id")
-            .ilike("name", sql_keyword)
+            .ilike("name", keyword)
             .execute()
         )
         matching_tag_ids = [t["id"] for t in tag_result.data]
 
-        post_ids_from_titles = {p["id"] for p in result.data}
         extra_posts = []
 
         if matching_tag_ids:
@@ -65,15 +61,13 @@ async def search_posts(
             extra_post_ids = [
                 pt["post_id"]
                 for pt in pt_result.data
-                if pt["post_id"] not in post_ids_from_titles
+                if pt["post_id"] not in post_map
             ]
 
             if extra_post_ids:
                 extra_result = (
                     supabase.table("posts")
-                    .select(
-                        "*, github_repositories(id, repo_name, github_url), post_tags(tags(id, name, slug))"
-                    )
+                    .select(select_fields)
                     .eq("status", "published")
                     .in_("id", extra_post_ids)
                     .order("published_at", desc=True)
@@ -81,7 +75,7 @@ async def search_posts(
                 )
                 extra_posts = extra_result.data
 
-        all_posts = result.data + extra_posts
+        all_posts = list(post_map.values()) + extra_posts
 
         posts = []
         for p in all_posts:
