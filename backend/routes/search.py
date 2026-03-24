@@ -1,10 +1,33 @@
 from fastapi import APIRouter, HTTPException, Query, Header
 from typing import Optional
+import httpx
+import os
 
 from database import supabase_service as supabase
 from auth import get_optional_user
 
 router = APIRouter(prefix="/api/search", tags=["search"])
+
+
+@router.get("/debug")
+async def search_debug(q: str = Query(default="code")):
+    """Diagnostic endpoint: make raw httpx request to Supabase and return full details."""
+    supabase_url = os.environ.get("SUPABASE_URL", "")
+    service_key = os.environ.get("SUPABASE_SERVICE_KEY", "")
+    keyword = f"%{q}%"
+    url = f"{supabase_url}/rest/v1/posts"
+    params = {"select": "id,title_en", "status": "eq.published", "title_en": f"ilike.{keyword}"}
+    headers = {"apikey": service_key, "Authorization": f"Bearer {service_key}"}
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(url, params=params, headers=headers)
+            return {
+                "url_sent": str(resp.request.url),
+                "status": resp.status_code,
+                "response": resp.text[:500],
+            }
+    except Exception as e:
+        return {"error": str(e)}
 
 
 @router.get("")
