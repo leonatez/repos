@@ -12,6 +12,7 @@ import { generateThumbnail } from '../lib/thumbnail'
 import LanguageToggle from '../components/LanguageToggle'
 import MarkdownRenderer from '../components/MarkdownRenderer'
 import CommentSection from '../components/CommentSection'
+import PostGallery from '../components/PostGallery'
 
 export default function Article() {
   const { slug } = useParams<{ slug: string }>()
@@ -224,31 +225,7 @@ export default function Article() {
 
           {/* Gallery */}
           {post.gallery_images && post.gallery_images.length > 0 && (
-            <div className="my-10">
-              <h2 className="text-xl font-semibold text-text-primary mb-4">Gallery</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {post.gallery_images.map((url, i) => (
-                  <a
-                    key={i}
-                    href={url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block overflow-hidden rounded-xl border border-border hover:border-accent/40 transition-colors"
-                  >
-                    <img
-                      src={url}
-                      alt={`Gallery image ${i + 1}`}
-                      loading="lazy"
-                      className="w-full h-48 object-cover hover:scale-105 transition-transform duration-300"
-                      onError={(e) => {
-                        const el = e.currentTarget.parentElement
-                        if (el) el.style.display = 'none'
-                      }}
-                    />
-                  </a>
-                ))}
-              </div>
-            </div>
+            <PostGallery images={post.gallery_images} />
           )}
 
           {/* Repo link */}
