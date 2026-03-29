@@ -21,6 +21,7 @@ export interface PostSummary {
   summary_vi?: string
   summary_en?: string
   cover_image?: string
+  gallery_images?: string[]
   status: 'draft' | 'published'
   created_at: string
   published_at?: string

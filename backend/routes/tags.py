@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Header
 from typing import Optional
 
-from database import supabase_service as supabase
+from db import get_db
 from auth import get_optional_user
 
 router = APIRouter(prefix="/api/tags", tags=["tags"])
@@ -11,8 +11,8 @@ router = APIRouter(prefix="/api/tags", tags=["tags"])
 async def list_tags():
     """List all tags."""
     try:
-        result = supabase.table("tags").select("*").order("name").execute()
-        return result.data
+        db = get_db()
+        return await db.get_all_tags()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -25,67 +25,20 @@ async def get_posts_by_tag(
     authorization: Optional[str] = Header(None),
 ):
     """List published posts that have a specific tag."""
-    user = await get_optional_user(authorization)
-    user_id = user["id"] if user else None
+    await get_optional_user(authorization)
+    db = get_db()
 
     try:
-        # Get tag ID
-        tag_result = (
-            supabase.table("tags").select("*").eq("slug", slug).single().execute()
-        )
-        if not tag_result.data:
+        tag = await db.get_tag_by_slug(slug)
+        if not tag:
             raise HTTPException(status_code=404, detail="Tag not found")
 
-        tag = tag_result.data
-
-        # Get post IDs for this tag
-        pt_result = (
-            supabase.table("post_tags")
-            .select("post_id")
-            .eq("tag_id", tag["id"])
-            .execute()
-        )
-        post_ids = [pt["post_id"] for pt in pt_result.data]
-
-        if not post_ids:
-            return {
-                "tag": tag,
-                "items": [],
-                "total": 0,
-                "limit": limit,
-                "offset": offset,
-            }
-
-        # Fetch posts
-        posts_result = (
-            supabase.table("posts")
-            .select(
-                "*, github_repositories(id, repo_name, github_url), post_tags(tags(id, name, slug))"
-            )
-            .eq("status", "published")
-            .in_("id", post_ids)
-            .order("published_at", desc=True)
-            .range(offset, offset + limit - 1)
-            .execute()
-        )
-
-        posts = []
-        for p in posts_result.data:
-            tags_list = [pt["tags"] for pt in p.get("post_tags", []) if pt.get("tags")]
-            repo = p.get("github_repositories")
-            posts.append({
-                **{k: v for k, v in p.items() if k not in ("post_tags", "github_repositories")},
-                "tags": tags_list,
-                "repo": repo,
-                "likes_count": 0,
-                "is_liked": False,
-                "is_saved": False,
-            })
+        posts, total = await db.get_posts_by_tag(slug, limit=limit, offset=offset)
 
         return {
             "tag": tag,
             "items": posts,
-            "total": len(post_ids),
+            "total": total,
             "limit": limit,
             "offset": offset,
         }

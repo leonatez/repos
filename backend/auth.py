@@ -2,8 +2,21 @@ import logging
 from fastapi import HTTPException, Header, status
 from typing import Optional
 from database import supabase, supabase_service
+from config import settings
 
 logger = logging.getLogger("auth")
+
+
+async def _sync_user_to_internal_db(user_id: str, email: str) -> None:
+    """When DATABASE=internal_db, ensure the authenticated user exists in local PostgreSQL."""
+    if settings.DATABASE != "internal_db":
+        return
+    try:
+        from db import get_db
+        db = get_db()
+        await db.upsert_user(user_id, email, username=None, avatar_url=None)
+    except Exception as e:
+        logger.warning(f"Failed to sync user {email} to internal DB: {e}")
 
 
 async def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
@@ -27,7 +40,9 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
                 detail="Invalid or expired token",
             )
         logger.debug(f"JWT verified — user: {response.user.email} ({response.user.id})")
-        return {"id": str(response.user.id), "email": response.user.email}
+        user = {"id": str(response.user.id), "email": response.user.email}
+        await _sync_user_to_internal_db(user["id"], user["email"])
+        return user
     except HTTPException:
         raise
     except Exception as e:
@@ -45,7 +60,9 @@ async def get_optional_user(authorization: Optional[str] = Header(None)) -> Opti
     try:
         response = supabase.auth.get_user(token)
         if response and response.user:
-            return {"id": str(response.user.id), "email": response.user.email}
+            user = {"id": str(response.user.id), "email": response.user.email}
+            await _sync_user_to_internal_db(user["id"], user["email"])
+            return user
     except Exception as e:
         logger.debug(f"Optional auth — token invalid: {e}")
     return None
@@ -56,20 +73,24 @@ async def get_admin_user(authorization: Optional[str] = Header(None)) -> dict:
     logger.debug(f"Checking admin role for user {user['email']} ({user['id']})")
 
     try:
-        result = (
-            supabase_service.table("users")
-            .select("role")
-            .eq("id", user["id"])
-            .single()
-            .execute()
-        )
-        logger.debug(f"Role query result: {result.data}")
-
-        if not result.data or result.data.get("role") != "admin":
-            logger.warning(
-                f"Admin check failed for {user['email']} — "
-                f"row={result.data!r}"
+        if settings.DATABASE == "internal_db":
+            from db import get_db
+            db = get_db()
+            user_row = await db.get_user_by_id(user["id"])
+            role = (user_row or {}).get("role")
+        else:
+            result = (
+                supabase_service.table("users")
+                .select("role")
+                .eq("id", user["id"])
+                .single()
+                .execute()
             )
+            logger.debug(f"Role query result: {result.data}")
+            role = (result.data or {}).get("role") if result.data else None
+
+        if role != "admin":
+            logger.warning(f"Admin check failed for {user['email']} — role={role!r}")
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Admin access required",

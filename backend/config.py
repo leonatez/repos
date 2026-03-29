@@ -9,6 +9,11 @@ class Settings(BaseSettings):
     SUPABASE_SERVICE_KEY: str   # service_role key — used for all DB writes (bypasses RLS)
     GITHUB_TOKEN: Optional[str] = None
 
+    # Database backend: "supabase" (default) or "internal_db" (local PostgreSQL)
+    DATABASE: str = "supabase"
+    # Required when DATABASE=internal_db
+    INTERNAL_DB_URL: str = ""
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

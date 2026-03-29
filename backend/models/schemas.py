@@ -53,6 +53,7 @@ class PostSummary(BaseModel):
     summary_vi: Optional[str] = None
     summary_en: Optional[str] = None
     cover_image: Optional[str] = None
+    gallery_images: List[str] = []
     status: str
     created_at: datetime
     published_at: Optional[datetime] = None
@@ -74,6 +75,7 @@ class PostResponse(BaseModel):
     content_markdown_vi: Optional[str] = None
     content_markdown_en: Optional[str] = None
     cover_image: Optional[str] = None
+    gallery_images: List[str] = []
     status: str
     created_at: datetime
     published_at: Optional[datetime] = None

@@ -222,6 +222,35 @@ export default function Article() {
             <p className="text-text-secondary italic mb-12">No content available.</p>
           )}
 
+          {/* Gallery */}
+          {post.gallery_images && post.gallery_images.length > 0 && (
+            <div className="my-10">
+              <h2 className="text-xl font-semibold text-text-primary mb-4">Gallery</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {post.gallery_images.map((url, i) => (
+                  <a
+                    key={i}
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block overflow-hidden rounded-xl border border-border hover:border-accent/40 transition-colors"
+                  >
+                    <img
+                      src={url}
+                      alt={`Gallery image ${i + 1}`}
+                      loading="lazy"
+                      className="w-full h-48 object-cover hover:scale-105 transition-transform duration-300"
+                      onError={(e) => {
+                        const el = e.currentTarget.parentElement
+                        if (el) el.style.display = 'none'
+                      }}
+                    />
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Repo link */}
           {post.repo?.github_url && (
             <div className="my-10 p-6 bg-bg-secondary border border-border rounded-2xl">

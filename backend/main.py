@@ -1,10 +1,10 @@
 import logging
 import time
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-import os
 
+from config import settings
 from routes import admin, posts, tags, comments, search, favorites
 
 logging.basicConfig(
@@ -14,11 +14,30 @@ logging.basicConfig(
 )
 logger = logging.getLogger("app")
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if settings.DATABASE == "internal_db":
+        if not settings.INTERNAL_DB_URL:
+            raise RuntimeError("INTERNAL_DB_URL must be set when DATABASE=internal_db")
+        from db import init_pool, close_pool
+        logger.info("Starting up with internal_db (local PostgreSQL)")
+        await init_pool(settings.INTERNAL_DB_URL)
+    else:
+        logger.info("Starting up with Supabase database")
+    yield
+    if settings.DATABASE == "internal_db":
+        from db import close_pool
+        await close_pool()
+
+
 app = FastAPI(
     title="Repos API",
     description="Converts GitHub repos into structured bilingual blog articles (Vietnamese + English)",
     version="1.0.0",
+    lifespan=lifespan,
 )
+
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
@@ -61,7 +80,7 @@ app.include_router(favorites.router)
 
 @app.get("/health")
 async def health_check():
-    return {"status": "ok", "service": "Repos API"}
+    return {"status": "ok", "service": "Repos API", "database": settings.DATABASE}
 
 
 @app.get("/")

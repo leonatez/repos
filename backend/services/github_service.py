@@ -1,8 +1,49 @@
 import base64
+import re
 import httpx
 from urllib.parse import urlparse
 from typing import Optional
 from config import settings
+
+_IMAGE_EXTENSIONS = r"\.(?:png|jpg|jpeg|gif|webp|svg|bmp|ico)"
+_MD_ABS_IMG_RE = re.compile(
+    r"!\[[^\]]*\]\((https?://[^\s)]+?" + _IMAGE_EXTENSIONS + r"[^\s)]*)\)",
+    re.IGNORECASE,
+)
+_HTML_ABS_IMG_RE = re.compile(
+    r'<img[^>]+src=["\']?(https?://[^\s"\'>\)]+)["\']?',
+    re.IGNORECASE,
+)
+_MD_REL_IMG_RE = re.compile(
+    r"!\[[^\]]*\]\((?!https?://)([^\s)\#?]+?" + _IMAGE_EXTENSIONS + r"[^\s)]*)\)",
+    re.IGNORECASE,
+)
+
+
+def extract_readme_images(readme_content: str, owner: str, repo_name: str) -> list[str]:
+    """Extract image URLs from README markdown. Converts relative paths to absolute raw.githubusercontent.com URLs."""
+    seen: set[str] = set()
+    images: list[str] = []
+
+    def add(url: str) -> None:
+        url = url.strip().rstrip(")")
+        if url and url not in seen:
+            seen.add(url)
+            images.append(url)
+
+    for m in _MD_ABS_IMG_RE.finditer(readme_content):
+        add(m.group(1))
+
+    for m in _HTML_ABS_IMG_RE.finditer(readme_content):
+        url = m.group(1)
+        if re.search(_IMAGE_EXTENSIONS, url, re.IGNORECASE) or "githubusercontent" in url:
+            add(url)
+
+    for m in _MD_REL_IMG_RE.finditer(readme_content):
+        rel = m.group(1).lstrip("./")
+        add(f"https://raw.githubusercontent.com/{owner}/{repo_name}/HEAD/{rel}")
+
+    return images[:20]
 
 
 def parse_github_url(github_url: str) -> tuple[str, str]:
@@ -20,7 +61,7 @@ async def fetch_repo_info(github_url: str) -> dict:
     """
     Fetch repository information from GitHub API.
     Returns dict with name, description, stars, language, topics,
-    readme, url, owner, repo_name.
+    readme, url, owner, repo_name, gallery_images.
     """
     owner, repo_name = parse_github_url(github_url)
 
@@ -63,6 +104,8 @@ async def fetch_repo_info(github_url: str) -> dict:
         except Exception:
             readme_content = "Could not fetch README."
 
+        gallery_images = extract_readme_images(readme_content, owner, repo_name)
+
         return {
             "name": repo_data.get("name", repo_name),
             "description": repo_data.get("description") or "",
@@ -78,4 +121,5 @@ async def fetch_repo_info(github_url: str) -> dict:
             "license": (repo_data.get("license") or {}).get("name", ""),
             "open_issues": repo_data.get("open_issues_count", 0),
             "watchers": repo_data.get("watchers_count", 0),
+            "gallery_images": gallery_images,
         }

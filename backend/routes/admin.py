@@ -3,14 +3,12 @@ import logging
 from fastapi import APIRouter, HTTPException, Depends, Header
 from typing import Optional
 from datetime import datetime, timezone
-import uuid
 
-from database import supabase_service as supabase
+from db import get_db
 from auth import get_admin_user
 from models.schemas import (
     AdminSubmitRequest,
     PostUpdate,
-    PipelineStatusResponse,
 )
 from services.ai_pipeline import extract_github_urls, analyze_and_generate_article
 from services.github_service import fetch_repo_info
@@ -24,11 +22,13 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 async def _process_single_url(github_url: str) -> dict:
     """
     Full pipeline for one GitHub URL:
-      1. Fetch repo info
+      1. Fetch repo info (including gallery_images)
       2. Generate bilingual article via Gemini
       3. Save repo, post, tags to DB
     Returns the created post dict, or raises on failure.
     """
+    db = get_db()
+
     # Fetch repo info
     repo_info = await fetch_repo_info(github_url)
 
@@ -36,25 +36,11 @@ async def _process_single_url(github_url: str) -> dict:
     article = await analyze_and_generate_article(repo_info)
 
     # Save or reuse github_repositories row
-    existing_repo = (
-        supabase.table("github_repositories")
-        .select("id")
-        .eq("github_url", repo_info["url"])
-        .execute()
-    )
-    if existing_repo.data:
-        repo_id = existing_repo.data[0]["id"]
-    else:
-        repo_insert = (
-            supabase.table("github_repositories")
-            .insert({"repo_name": repo_info["repo_name"], "github_url": repo_info["url"]})
-            .execute()
-        )
-        repo_id = repo_insert.data[0]["id"]
+    repo_id = await db.get_or_create_repo(repo_info["repo_name"], repo_info["url"])
 
     # Create draft post
     slug = generate_unique_slug(article["title_en"])
-    post_result = supabase.table("posts").insert({
+    post = await db.create_post({
         "title_vi": article["title_vi"],
         "title_en": article["title_en"],
         "slug": slug,
@@ -62,11 +48,11 @@ async def _process_single_url(github_url: str) -> dict:
         "summary_en": article.get("summary_en"),
         "content_markdown_vi": article.get("content_markdown_vi"),
         "content_markdown_en": article.get("content_markdown_en"),
+        "gallery_images": repo_info.get("gallery_images", []),
         "repo_id": repo_id,
         "status": "draft",
-    }).execute()
-    post = post_result.data[0]
-    post_id = post["id"]
+    })
+    post_id = str(post["id"])
 
     # Save tags
     tag_ids = []
@@ -75,40 +61,23 @@ async def _process_single_url(github_url: str) -> dict:
         if not tag_slug:
             continue
         try:
-            tag_result = (
-                supabase.table("tags")
-                .upsert({"name": tag_name.lower(), "slug": tag_slug}, on_conflict="slug")
-                .execute()
-            )
-            tag_ids.append(tag_result.data[0]["id"])
+            tag_id = await db.upsert_tag(tag_name.lower(), tag_slug)
+            tag_ids.append(tag_id)
         except Exception:
             try:
-                existing = supabase.table("tags").select("id").eq("slug", tag_slug).execute()
-                if existing.data:
-                    tag_ids.append(existing.data[0]["id"])
+                tag = await db.get_tag_by_slug(tag_slug)
+                if tag:
+                    tag_ids.append(str(tag["id"]))
             except Exception:
                 pass
 
     if tag_ids:
         try:
-            supabase.table("post_tags").insert(
-                [{"post_id": post_id, "tag_id": tid} for tid in tag_ids]
-            ).execute()
+            await db.add_post_tags(post_id, tag_ids)
         except Exception:
             pass
 
-    # Fetch tags for response
-    tags = []
-    try:
-        pt_result = (
-            supabase.table("post_tags")
-            .select("tags(id, name, slug)")
-            .eq("post_id", post_id)
-            .execute()
-        )
-        tags = [pt["tags"] for pt in pt_result.data if pt.get("tags")]
-    except Exception:
-        pass
+    tags = await db.get_tags_for_post(post_id)
 
     return {
         **post,
@@ -132,7 +101,6 @@ async def submit_social_text(
     """
     await get_admin_user(authorization)
 
-    # Extract all GitHub URLs from the submitted text
     github_urls = extract_github_urls(request.text)
     if not github_urls:
         raise HTTPException(
@@ -142,7 +110,6 @@ async def submit_social_text(
 
     logger.info(f"Processing {len(github_urls)} URL(s): {github_urls}")
 
-    # Process all URLs concurrently; capture per-URL errors without failing the whole batch
     async def safe_process(url: str):
         try:
             return {"url": url, "post": await _process_single_url(url), "error": None}
@@ -156,7 +123,6 @@ async def submit_social_text(
     errors = [{"url": r["url"], "detail": r["error"]} for r in results if r["error"] is not None]
 
     if not posts and errors:
-        # All failed — return 500 with details
         raise HTTPException(
             status_code=500,
             detail=f"All {len(errors)} URL(s) failed. First error: {errors[0]['detail']}",
@@ -177,32 +143,11 @@ async def list_all_posts(
 ):
     """List all posts (draft + published) for admin."""
     await get_admin_user(authorization)
+    db = get_db()
 
     try:
-        result = (
-            supabase.table("posts")
-            .select(
-                "*, github_repositories(id, repo_name, github_url), post_tags(tags(id, name, slug))"
-            )
-            .order("created_at", desc=True)
-            .range(offset, offset + limit - 1)
-            .execute()
-        )
-
-        posts = []
-        for p in result.data:
-            tags = [pt["tags"] for pt in p.get("post_tags", []) if pt.get("tags")]
-            repo = p.get("github_repositories")
-            posts.append({
-                **{k: v for k, v in p.items() if k not in ("post_tags", "github_repositories")},
-                "tags": tags,
-                "repo": repo,
-                "likes_count": 0,
-                "is_liked": False,
-                "is_saved": False,
-            })
-
-        return {"items": posts, "total": len(posts), "limit": limit, "offset": offset}
+        posts, total = await db.get_posts(limit=limit, offset=offset)
+        return {"items": posts, "total": total, "limit": limit, "offset": offset}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -215,6 +160,7 @@ async def update_post(
 ):
     """Edit a post (any field)."""
     await get_admin_user(authorization)
+    db = get_db()
 
     update_data = update.model_dump(exclude_none=True)
     tags = update_data.pop("tags", None)
@@ -224,60 +170,30 @@ async def update_post(
 
     try:
         if update_data:
-            result = (
-                supabase.table("posts")
-                .update(update_data)
-                .eq("id", post_id)
-                .execute()
-            )
-            if not result.data:
+            updated = await db.update_post(post_id, update_data)
+            if updated is None:
                 raise HTTPException(status_code=404, detail="Post not found")
 
-        # Update tags if provided
         if tags is not None:
-            # Remove existing tags
-            supabase.table("post_tags").delete().eq("post_id", post_id).execute()
-
+            await db.remove_post_tags(post_id)
+            tag_ids = []
             for tag_name in tags:
                 tag_slug = slugify_tag(tag_name)
                 if not tag_slug:
                     continue
                 try:
-                    tag_result = (
-                        supabase.table("tags")
-                        .upsert(
-                            {"name": tag_name.lower(), "slug": tag_slug},
-                            on_conflict="slug",
-                        )
-                        .execute()
-                    )
-                    tag_id = tag_result.data[0]["id"]
-                    supabase.table("post_tags").insert(
-                        {"post_id": post_id, "tag_id": tag_id}
-                    ).execute()
+                    tag_id = await db.upsert_tag(tag_name.lower(), tag_slug)
+                    tag_ids.append(tag_id)
                 except Exception:
                     pass
+            if tag_ids:
+                await db.add_post_tags(post_id, tag_ids)
 
-        # Fetch updated post
-        post_result = (
-            supabase.table("posts")
-            .select(
-                "*, github_repositories(id, repo_name, github_url), post_tags(tags(id, name, slug))"
-            )
-            .eq("id", post_id)
-            .single()
-            .execute()
-        )
-        p = post_result.data
-        tags_list = [pt["tags"] for pt in p.get("post_tags", []) if pt.get("tags")]
-        return {
-            **{k: v for k, v in p.items() if k not in ("post_tags", "github_repositories")},
-            "tags": tags_list,
-            "repo": p.get("github_repositories"),
-            "likes_count": 0,
-            "is_liked": False,
-            "is_saved": False,
-        }
+        post = await db.get_post_by_id(post_id)
+        if not post:
+            raise HTTPException(status_code=404, detail="Post not found")
+        post["tags"] = await db.get_tags_for_post(post_id)
+        return post
     except HTTPException:
         raise
     except Exception as e:
@@ -291,24 +207,18 @@ async def publish_post(
 ):
     """Publish a draft post."""
     await get_admin_user(authorization)
+    db = get_db()
 
     try:
-        result = (
-            supabase.table("posts")
-            .update(
-                {
-                    "status": "published",
-                    "published_at": datetime.now(timezone.utc).isoformat(),
-                }
-            )
-            .eq("id", post_id)
-            .execute()
-        )
-        if not result.data:
+        post = await db.publish_post(post_id)
+        if not post:
             raise HTTPException(status_code=404, detail="Post not found")
-
-        p = result.data[0]
-        return {**p, "tags": [], "repo": None, "likes_count": 0, "is_liked": False, "is_saved": False}
+        post["tags"] = []
+        post["repo"] = None
+        post["likes_count"] = 0
+        post["is_liked"] = False
+        post["is_saved"] = False
+        return post
     except HTTPException:
         raise
     except Exception as e:
@@ -322,15 +232,11 @@ async def delete_comment(
 ):
     """Soft-delete a comment (set status to 'deleted')."""
     await get_admin_user(authorization)
+    db = get_db()
 
     try:
-        result = (
-            supabase.table("comments")
-            .update({"status": "deleted"})
-            .eq("id", comment_id)
-            .execute()
-        )
-        if not result.data:
+        found = await db.soft_delete_comment(comment_id)
+        if not found:
             raise HTTPException(status_code=404, detail="Comment not found")
         return {"message": "Comment deleted successfully"}
     except HTTPException:
