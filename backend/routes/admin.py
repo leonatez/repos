@@ -10,7 +10,7 @@ from models.schemas import (
     AdminSubmitRequest,
     PostUpdate,
 )
-from services.ai_pipeline import extract_github_urls, analyze_and_generate_article
+from services.ai_pipeline import extract_github_urls, analyze_and_generate_article, generate_article_from_content
 from services.github_service import fetch_repo_info
 from utils import generate_unique_slug, slugify_tag
 
@@ -89,6 +89,67 @@ async def _process_single_url(github_url: str) -> dict:
     }
 
 
+async def _process_free_content(text: str) -> dict:
+    """
+    Pipeline for text that contains no GitHub URL:
+      1. AI researches the topic on the internet
+      2. Generates a bilingual article combining the research with the original content
+      3. Save post and tags to DB (no repo link)
+    Returns the created post dict.
+    """
+    db = get_db()
+
+    article = await generate_article_from_content(text)
+
+    slug = generate_unique_slug(article["title_en"])
+    post = await db.create_post({
+        "title_vi": article["title_vi"],
+        "title_en": article["title_en"],
+        "slug": slug,
+        "summary_vi": article.get("summary_vi"),
+        "summary_en": article.get("summary_en"),
+        "content_markdown_vi": article.get("content_markdown_vi"),
+        "content_markdown_en": article.get("content_markdown_en"),
+        "gallery_images": [],
+        "repo_id": None,
+        "status": "draft",
+    })
+    post_id = str(post["id"])
+
+    tag_ids = []
+    for tag_name in article.get("tags", []):
+        tag_slug = slugify_tag(tag_name)
+        if not tag_slug:
+            continue
+        try:
+            tag_id = await db.upsert_tag(tag_name.lower(), tag_slug)
+            tag_ids.append(tag_id)
+        except Exception:
+            try:
+                tag = await db.get_tag_by_slug(tag_slug)
+                if tag:
+                    tag_ids.append(str(tag["id"]))
+            except Exception:
+                pass
+
+    if tag_ids:
+        try:
+            await db.add_post_tags(post_id, tag_ids)
+        except Exception:
+            pass
+
+    tags = await db.get_tags_for_post(post_id)
+
+    return {
+        **post,
+        "repo": None,
+        "tags": tags,
+        "likes_count": 0,
+        "is_liked": False,
+        "is_saved": False,
+    }
+
+
 @router.post("/submit")
 async def submit_social_text(
     request: AdminSubmitRequest,
@@ -102,31 +163,38 @@ async def submit_social_text(
     await get_admin_user(authorization)
 
     github_urls = extract_github_urls(request.text)
-    if not github_urls:
-        raise HTTPException(
-            status_code=422,
-            detail="Could not find any GitHub repository URLs in the provided text.",
-        )
 
-    logger.info(f"Processing {len(github_urls)} URL(s): {github_urls}")
+    if github_urls:
+        # ── GitHub pipeline: one article per repo ──────────────────────────────
+        logger.info(f"Processing {len(github_urls)} GitHub URL(s): {github_urls}")
 
-    async def safe_process(url: str):
+        async def safe_process(url: str):
+            try:
+                return {"url": url, "post": await _process_single_url(url), "error": None}
+            except Exception as e:
+                logger.error(f"Failed to process {url}: {e}", exc_info=True)
+                return {"url": url, "post": None, "error": str(e)}
+
+        results = await asyncio.gather(*[safe_process(url) for url in github_urls])
+
+        posts = [r["post"] for r in results if r["post"] is not None]
+        errors = [{"url": r["url"], "detail": r["error"]} for r in results if r["error"] is not None]
+
+        if not posts and errors:
+            raise HTTPException(
+                status_code=500,
+                detail=f"All {len(errors)} URL(s) failed. First error: {errors[0]['detail']}",
+            )
+    else:
+        # ── Free-content pipeline: AI researches topic and composes article ─────
+        logger.info("No GitHub URLs found — composing article from content via AI research")
         try:
-            return {"url": url, "post": await _process_single_url(url), "error": None}
+            post = await _process_free_content(request.text)
+            posts = [post]
+            errors = []
         except Exception as e:
-            logger.error(f"Failed to process {url}: {e}", exc_info=True)
-            return {"url": url, "post": None, "error": str(e)}
-
-    results = await asyncio.gather(*[safe_process(url) for url in github_urls])
-
-    posts = [r["post"] for r in results if r["post"] is not None]
-    errors = [{"url": r["url"], "detail": r["error"]} for r in results if r["error"] is not None]
-
-    if not posts and errors:
-        raise HTTPException(
-            status_code=500,
-            detail=f"All {len(errors)} URL(s) failed. First error: {errors[0]['detail']}",
-        )
+            logger.error(f"Failed to generate article from content: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=str(e))
 
     return {
         "posts": posts,

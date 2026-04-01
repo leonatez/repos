@@ -16,7 +16,7 @@ interface SubmitResult {
   errors: { url: string; detail: string }[]
 }
 
-const PROCESSING_MESSAGES = [
+const GITHUB_PROCESSING_MESSAGES = [
   'Extracting GitHub URLs from text...',
   'Fetching repository information from GitHub...',
   'Analyzing repositories with AI (this may take a minute)...',
@@ -24,14 +24,31 @@ const PROCESSING_MESSAGES = [
   'Saving to database...',
 ]
 
+const CONTENT_PROCESSING_MESSAGES = [
+  'Detecting topic from your content...',
+  'Researching the topic on the internet...',
+  'Analyzing insights and combining with your content...',
+  'Generating bilingual article...',
+  'Saving to database...',
+]
+
+const GITHUB_RE = /https?:\/\/github\.com\/([\w\-.]+)\/([\w\-.]+)/
+
+function hasGithubUrl(text: string): boolean {
+  return GITHUB_RE.test(text)
+}
+
 export default function NewPost() {
   const { user, isAdmin, loading: authLoading } = useAuth()
   const navigate = useNavigate()
   const [text, setText] = useState('')
   const [step, setStep] = useState<Step>('input')
   const [messageIndex, setMessageIndex] = useState(0)
+  const [isGithubMode, setIsGithubMode] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<SubmitResult | null>(null)
+
+  const processingMessages = isGithubMode ? GITHUB_PROCESSING_MESSAGES : CONTENT_PROCESSING_MESSAGES
 
   if (!authLoading && (!user || !isAdmin)) {
     return <Navigate to="/" replace />
@@ -44,6 +61,7 @@ export default function NewPost() {
     setStep('processing')
     setError(null)
     setMessageIndex(0)
+    setIsGithubMode(hasGithubUrl(text.trim()))
 
     const delays = [3000, 8000, 35000, 35000]
     const timeouts: ReturnType<typeof setTimeout>[] = []
@@ -86,7 +104,7 @@ export default function NewPost() {
           </div>
           <div>
             <h1 className="text-2xl font-bold text-text-primary">Generate New Articles</h1>
-            <p className="text-text-muted text-sm">Paste text containing one or more GitHub URLs</p>
+            <p className="text-text-muted text-sm">Paste a GitHub URL or any tech content — AI handles the rest</p>
           </div>
         </div>
 
@@ -95,17 +113,18 @@ export default function NewPost() {
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="bg-bg-secondary border border-border rounded-2xl p-6">
               <label className="block text-text-primary font-semibold mb-3">
-                Text with GitHub URLs
+                Content to turn into an article
               </label>
               <p className="text-text-muted text-sm mb-4">
-                Paste a tweet, LinkedIn post, HackerNews thread, or any text containing GitHub repository URLs.
-                Multiple URLs are supported — each repo gets its own bilingual article.
+                Paste anything — a tweet, LinkedIn post, news snippet, or opinion piece.
+                If a <strong className="text-text-secondary">GitHub URL</strong> is detected, each repo gets its own bilingual article.
+                Otherwise, AI will <strong className="text-text-secondary">research the topic online</strong> and compose a full article from your content.
               </p>
               <textarea
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 rows={8}
-                placeholder={`Example (multiple URLs supported):\n\nCheck out these awesome AI tools:\nhttps://github.com/owner/repo-one\nhttps://github.com/another/repo-two\n\nBoth are incredible for developers!`}
+                placeholder={`Examples:\n\n① GitHub URL (existing pipeline):\nhttps://github.com/owner/repo — amazing new AI framework!\n\n② Any tech content (AI research + compose):\n"Vector databases are transforming how we build RAG systems. \nPgvector, Pinecone, Weaviate... which one should you pick?"`}
                 className="w-full bg-bg-primary border border-border rounded-xl p-4 text-text-primary placeholder:text-text-muted text-sm resize-none focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors font-mono"
               />
               <p className="text-text-muted text-xs mt-2">{text.length} characters</p>
@@ -138,12 +157,14 @@ export default function NewPost() {
             </div>
             <h2 className="text-xl font-bold text-text-primary mb-3">Processing...</h2>
             <p className="text-text-secondary text-sm mb-8 max-w-md mx-auto">
-              The AI is analyzing repositories and generating articles. Multiple repos are processed in parallel.
-              This typically takes 30–120 seconds.
+              {isGithubMode
+                ? 'The AI is analyzing repositories and generating articles. Multiple repos are processed in parallel.'
+                : 'The AI is researching your topic online and composing a bilingual article.'}
+              {' '}This typically takes 30–120 seconds.
             </p>
 
             <div className="text-left max-w-sm mx-auto space-y-3">
-              {PROCESSING_MESSAGES.map((msg, idx) => (
+              {processingMessages.map((msg, idx) => (
                 <div
                   key={idx}
                   className={`flex items-center gap-3 text-sm transition-all duration-500 ${
@@ -231,8 +252,14 @@ export default function NewPost() {
                 className="bg-bg-secondary border border-border rounded-2xl p-5"
               >
                 <div className="flex items-center gap-2 mb-3">
-                  <Github className="w-4 h-4 text-accent" />
-                  <span className="text-text-muted text-xs uppercase tracking-wider">Draft Article</span>
+                  {post.repo ? (
+                    <Github className="w-4 h-4 text-accent" />
+                  ) : (
+                    <Sparkles className="w-4 h-4 text-accent" />
+                  )}
+                  <span className="text-text-muted text-xs uppercase tracking-wider">
+                    {post.repo ? 'Draft Article — GitHub Repo' : 'Draft Article — AI Composed'}
+                  </span>
                 </div>
                 <h3 className="text-lg font-bold text-text-primary mb-1">{post.title_en}</h3>
                 <p className="text-text-secondary text-sm mb-2">{post.title_vi}</p>

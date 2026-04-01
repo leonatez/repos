@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 from typing import List, Optional
 
@@ -9,6 +10,8 @@ from config import settings
 genai.configure(api_key=settings.GEMINI_API_KEY)
 
 MODEL = "gemini-3.1-flash-lite-preview"
+
+logger = logging.getLogger("ai_pipeline")
 
 # Matches https://github.com/owner/repo  (owner + repo — preferred)
 _GITHUB_REPO_RE = re.compile(r"https?://github\.com/([\w\-\.]+)/([\w\-\.]+)")
@@ -176,5 +179,134 @@ Return ONLY the JSON object, no other text."""
 
     if not isinstance(result.get("tags"), list):
         result["tags"] = repo_info.get("topics", ["github", "open-source"])[:8]
+
+    return result
+
+
+async def generate_article_from_content(text: str) -> dict:
+    """
+    When no GitHub URL is found, treat the pasted text (tweet, opinion, news, etc.)
+    as the topic seed.
+
+    Two-step process:
+      1. Use Gemini with Google Search grounding to research the topic.
+      2. Use Gemini in JSON mode to write the same bilingual article structure
+         as repo-based posts, blending the research with the original viewpoint.
+    """
+    # ── Step 1: Research the topic with web grounding ──────────────────────────
+    research_context = ""
+    try:
+        research_prompt = f"""You are a technology researcher. Based on the text below, identify the key topic(s) being discussed. Then use your knowledge—and any available search results—to compile comprehensive background information.
+
+Text:
+{text}
+
+Provide:
+1. Main topic(s) identified
+2. Key background knowledge and context
+3. Recent developments or trends
+4. Technical concepts and important details
+5. Notable related projects, tools, or resources
+
+Be thorough — your findings will be the primary research base for a detailed tech article."""
+
+        try:
+            # Try Google Search grounding (model must support it)
+            search_tool = genai.protos.Tool(
+                google_search_retrieval=genai.protos.GoogleSearchRetrieval()
+            )
+            research_model = genai.GenerativeModel(MODEL)
+            research_response = research_model.generate_content(
+                research_prompt, tools=[search_tool]
+            )
+            research_context = research_response.text.strip()
+            logger.info("Web search grounding succeeded for free-content article")
+        except Exception as grounding_err:
+            logger.warning(f"Web grounding unavailable ({grounding_err}), using parametric knowledge")
+            research_model = genai.GenerativeModel(MODEL)
+            research_response = research_model.generate_content(research_prompt)
+            research_context = research_response.text.strip()
+    except Exception as e:
+        logger.warning(f"Research step failed entirely: {e}")
+        research_context = ""
+
+    # ── Step 2: Write the structured bilingual article ─────────────────────────
+    research_block = ""
+    if research_context:
+        research_block = f"""
+--- RESEARCH FINDINGS ---
+{research_context}
+--- END RESEARCH FINDINGS ---
+"""
+
+    prompt = f"""You are an expert technical writer for a bilingual tech magazine targeting Vietnamese developers.
+
+An admin has pasted the following content (tweet, news excerpt, opinion, etc.) as inspiration for a new article:
+
+--- ORIGINAL CONTENT ---
+{text}
+--- END ORIGINAL CONTENT ---
+{research_block}
+Use the original content as the viewpoint/news angle and the research findings as domain knowledge. Write a comprehensive bilingual tech article. Your response must be a valid JSON object with exactly these fields:
+
+{{
+  "title_vi": "Tiêu đề bài viết bằng tiếng Việt (hấp dẫn, SEO-friendly)",
+  "title_en": "Article title in English (engaging, SEO-friendly)",
+  "summary_vi": "Tóm tắt ngắn gọn 2-3 câu bằng tiếng Việt mô tả chủ đề và tại sao nó quan trọng",
+  "summary_en": "Short 2-3 sentence summary in English describing the topic and why it matters",
+  "content_markdown_vi": "Nội dung bài viết đầy đủ bằng tiếng Việt (markdown format)",
+  "content_markdown_en": "Full article content in English (markdown format)",
+  "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"]
+}}
+
+Requirements for the article content (both languages):
+1. **Introduction** — Hook the reader; introduce the topic from the angle of the original content
+2. **Problem Statement** — What challenge or trend does this topic address?
+3. **Key Insights** — Bullet list of the most important points from both the content and research
+4. **Deep Dive** — Technical or contextual explanation drawing on the research findings
+5. **Real-World Examples** — Concrete examples, tools, or projects related to the topic
+6. **Analysis & Opinion** — Incorporate the viewpoint from the original content
+7. **Conclusion & What's Next** — Takeaways and forward-looking perspective
+
+For tags: generate 5-8 relevant technical tags (e.g., "ai", "python", "open-source", "web").
+The Vietnamese content should be natural, fluent Vietnamese — not a literal translation.
+The English content should be engaging tech journalism style.
+Each article must be at least 800 words per language.
+
+Return ONLY the JSON object, no other text."""
+
+    model = genai.GenerativeModel(
+        MODEL,
+        generation_config=genai.GenerationConfig(
+            response_mime_type="application/json",
+            max_output_tokens=8192,
+        ),
+    )
+
+    response = model.generate_content(prompt)
+    collected_text = response.text.strip()
+
+    json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", collected_text, re.DOTALL)
+    if json_match:
+        json_str = json_match.group(1)
+    else:
+        json_match = re.search(r"\{.*\}", collected_text, re.DOTALL)
+        json_str = json_match.group(0) if json_match else collected_text
+
+    try:
+        result = json.loads(json_str)
+    except json.JSONDecodeError:
+        result = {
+            "title_vi": "Bài viết công nghệ",
+            "title_en": "Technology Article",
+            "summary_vi": "Bài viết được tổng hợp từ nội dung được cung cấp.",
+            "summary_en": "Article composed from the provided content.",
+            "content_markdown_vi": collected_text,
+            "content_markdown_en": collected_text,
+            "tags": ["technology", "tech"],
+        }
+
+    if not isinstance(result.get("tags"), list):
+        result["tags"] = ["technology", "tech"]
 
     return result
