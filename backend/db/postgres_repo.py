@@ -217,6 +217,31 @@ class PostgresRepository(AbstractRepository):
             posts = [await self._enrich_post(conn, _row_to_dict(r)) for r in rows]
             return posts, len(ids)
 
+    async def get_related_posts_by_tags(self, tag_slugs: list, limit: int) -> list:
+        if not tag_slugs:
+            return []
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT DISTINCT p.id, p.title_en, p.slug, p.summary_en
+                   FROM posts p
+                   JOIN post_tags pt ON pt.post_id = p.id
+                   JOIN tags t ON t.id = pt.tag_id
+                   WHERE t.slug = ANY($1) AND p.status = 'published'
+                   ORDER BY p.id
+                   LIMIT $2""",
+                tag_slugs, limit,
+            )
+            out = []
+            for row in rows:
+                tags = await self._get_tags_for_post(conn, row["id"])
+                out.append({
+                    "title_en": row["title_en"],
+                    "slug": row["slug"],
+                    "summary_en": row["summary_en"] or "",
+                    "tags": [t["name"] for t in tags],
+                })
+            return out
+
     async def add_post_tags(self, post_id: str, tag_ids: list) -> None:
         if not tag_ids:
             return

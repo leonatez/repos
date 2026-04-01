@@ -6,6 +6,7 @@ from typing import List, Optional
 import google.generativeai as genai
 
 from config import settings
+from services.post_memory import build_related_context
 
 genai.configure(api_key=settings.GEMINI_API_KEY)
 
@@ -88,7 +89,36 @@ def extract_github_url(text: str) -> Optional[str]:
     return urls[0] if urls else None
 
 
-async def analyze_and_generate_article(repo_info: dict) -> dict:
+async def extract_candidate_tags(text: str) -> List[str]:
+    """
+    Quick Gemini call that returns 3-5 topic tag slugs (lowercase, hyphenated)
+    for arbitrary text content. Used to seed the related-post lookup for the
+    free-content pipeline where we have no GitHub topics to start from.
+    Falls back to [] on any error so it never blocks generation.
+    """
+    prompt = f"""Extract 3 to 5 technical topic tags from the text below.
+Return only a JSON array of lowercase, hyphen-separated tag strings.
+Example: ["rag", "large-language-models", "python", "vector-db"]
+
+Text:
+{text[:1000]}
+
+Return ONLY the JSON array, no other text."""
+    try:
+        model = genai.GenerativeModel(
+            MODEL,
+            generation_config=genai.GenerationConfig(response_mime_type="application/json"),
+        )
+        response = model.generate_content(prompt)
+        tags = json.loads(response.text.strip())
+        if isinstance(tags, list):
+            return [str(t).lower().strip() for t in tags if t]
+    except Exception as e:
+        logger.warning(f"extract_candidate_tags failed: {e}")
+    return []
+
+
+async def analyze_and_generate_article(repo_info: dict, related_posts: list = []) -> dict:
     """
     Use Gemini to analyze a GitHub repository and generate a bilingual
     (Vietnamese + English) blog article.
@@ -111,11 +141,14 @@ README Content:
 {repo_info.get('readme', 'No README available')}
 """
 
+    related_block = build_related_context(related_posts)
+    if related_block:
+        related_block = "\n" + related_block + "\n"
+
     prompt = f"""You are an expert technical writer creating a bilingual blog article about a GitHub repository for a tech magazine targeting Vietnamese developers.
 
 Here is the repository information:
-{repo_context}
-
+{repo_context}{related_block}
 Please analyze this repository thoroughly and create a comprehensive, high-quality bilingual blog article. Your response must be a valid JSON object with exactly these fields:
 
 {{
@@ -183,7 +216,7 @@ Return ONLY the JSON object, no other text."""
     return result
 
 
-async def generate_article_from_content(text: str) -> dict:
+async def generate_article_from_content(text: str, related_posts: list = []) -> dict:
     """
     When no GitHub URL is found, treat the pasted text (tweet, opinion, news, etc.)
     as the topic seed.
@@ -239,6 +272,10 @@ Be thorough — your findings will be the primary research base for a detailed t
 --- END RESEARCH FINDINGS ---
 """
 
+    related_block = build_related_context(related_posts)
+    if related_block:
+        related_block = "\n" + related_block + "\n"
+
     prompt = f"""You are an expert technical writer for a bilingual tech magazine targeting Vietnamese developers.
 
 An admin has pasted the following content (tweet, news excerpt, opinion, etc.) as inspiration for a new article:
@@ -246,7 +283,7 @@ An admin has pasted the following content (tweet, news excerpt, opinion, etc.) a
 --- ORIGINAL CONTENT ---
 {text}
 --- END ORIGINAL CONTENT ---
-{research_block}
+{research_block}{related_block}
 Use the original content as the viewpoint/news angle and the research findings as domain knowledge. Write a comprehensive bilingual tech article. Your response must be a valid JSON object with exactly these fields:
 
 {{

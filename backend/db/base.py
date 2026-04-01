@@ -72,6 +72,13 @@ class AbstractRepository(ABC):
         ...
 
     @abstractmethod
+    async def get_related_posts_by_tags(self, tag_slugs: list, limit: int) -> list:
+        """Return up to `limit` published posts that share any of the given tag slugs.
+        Each item contains only: title_en, slug, summary_en, tags (list of tag names).
+        Used by the AI pipeline to inject related-article context before generation."""
+        ...
+
+    @abstractmethod
     async def add_post_tags(self, post_id: str, tag_ids: list) -> None:
         """Create post_tags rows linking post_id to each tag_id."""
         ...

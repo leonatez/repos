@@ -124,6 +124,37 @@ class SupabaseRepository(AbstractRepository):
         posts = [_enrich(p) for p in result.data]
         return posts, len(post_ids)
 
+    async def get_related_posts_by_tags(self, tag_slugs: list, limit: int) -> list:
+        if not tag_slugs:
+            return []
+        tag_rows = _sb.table("tags").select("id").in_("slug", tag_slugs).execute()
+        tag_ids = [t["id"] for t in tag_rows.data]
+        if not tag_ids:
+            return []
+        pt = _sb.table("post_tags").select("post_id").in_("tag_id", tag_ids).execute()
+        post_ids = list({r["post_id"] for r in pt.data})
+        if not post_ids:
+            return []
+        result = (
+            _sb.table("posts")
+            .select("id, title_en, slug, summary_en, post_tags(tags(name))")
+            .eq("status", "published")
+            .in_("id", post_ids)
+            .order("published_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        out = []
+        for p in result.data:
+            tags = [pt["tags"]["name"] for pt in p.get("post_tags", []) if pt.get("tags")]
+            out.append({
+                "title_en": p["title_en"],
+                "slug": p["slug"],
+                "summary_en": p.get("summary_en") or "",
+                "tags": tags,
+            })
+        return out
+
     async def add_post_tags(self, post_id: str, tag_ids: list) -> None:
         if tag_ids:
             _sb.table("post_tags").insert([{"post_id": post_id, "tag_id": tid} for tid in tag_ids]).execute()

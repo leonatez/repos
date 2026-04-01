@@ -10,7 +10,7 @@ from models.schemas import (
     AdminSubmitRequest,
     PostUpdate,
 )
-from services.ai_pipeline import extract_github_urls, analyze_and_generate_article, generate_article_from_content
+from services.ai_pipeline import extract_github_urls, analyze_and_generate_article, generate_article_from_content, extract_candidate_tags
 from services.github_service import fetch_repo_info
 from utils import generate_unique_slug, slugify_tag
 
@@ -32,8 +32,19 @@ async def _process_single_url(github_url: str) -> dict:
     # Fetch repo info
     repo_info = await fetch_repo_info(github_url)
 
+    # Find related published posts by repo topics + language before generating
+    related_posts = []
+    try:
+        candidate_slugs = [t.lower().replace(" ", "-") for t in repo_info.get("topics", [])]
+        if repo_info.get("language"):
+            candidate_slugs.append(repo_info["language"].lower())
+        if candidate_slugs:
+            related_posts = await db.get_related_posts_by_tags(candidate_slugs, limit=5)
+    except Exception as e:
+        logger.warning(f"Related posts lookup failed (continuing without): {e}")
+
     # Generate article via AI
-    article = await analyze_and_generate_article(repo_info)
+    article = await analyze_and_generate_article(repo_info, related_posts=related_posts)
 
     # Save or reuse github_repositories row
     repo_id = await db.get_or_create_repo(repo_info["repo_name"], repo_info["url"])
@@ -99,7 +110,16 @@ async def _process_free_content(text: str) -> dict:
     """
     db = get_db()
 
-    article = await generate_article_from_content(text)
+    # Extract candidate tags from text, then find related posts before generating
+    related_posts = []
+    try:
+        candidate_slugs = await extract_candidate_tags(text)
+        if candidate_slugs:
+            related_posts = await db.get_related_posts_by_tags(candidate_slugs, limit=5)
+    except Exception as e:
+        logger.warning(f"Related posts lookup failed (continuing without): {e}")
+
+    article = await generate_article_from_content(text, related_posts=related_posts)
 
     slug = generate_unique_slug(article["title_en"])
     post = await db.create_post({
