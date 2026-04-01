@@ -32,9 +32,10 @@ def build_related_context(related_posts: list) -> str:
         "--- END RELATED ARTICLES ---",
         "",
         "Instructions for using related articles:",
-        "- Where this topic overlaps with a related article, embed a markdown link: [Post Title](/posts/slug)",
+        "- ONLY link to the exact URLs listed above. Do NOT invent, guess, or create any other internal links.",
+        "- Where this topic overlaps with a related article, embed a markdown link using the exact URL: [Post Title](/posts/slug)",
         "- Draw natural comparisons where helpful (e.g. \"unlike LlamaIndex which we covered previously...\")",
         "- Do NOT re-explain concepts already covered in a linked post — refer readers there instead",
-        "- Add a '## Related Reading' section at the end listing the most relevant 2-3 links",
+        "- Add a '## Related Reading' section at the end listing the most relevant 2-3 links from the list above only",
     ]
     return "\n".join(lines)
