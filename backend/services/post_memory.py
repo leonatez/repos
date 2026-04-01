@@ -24,7 +24,7 @@ def build_related_context(related_posts: list) -> str:
         tag_str = ", ".join(p.get("tags", []))
         lines.append(
             f"{i}. Title: \"{p['title_en']}\"\n"
-            f"   URL: /posts/{p['slug']}\n"
+            f"   URL: /articles/{p['slug']}\n"
             f"   Tags: {tag_str}\n"
             f"   Summary: {p.get('summary_en', '')}"
         )
@@ -33,9 +33,9 @@ def build_related_context(related_posts: list) -> str:
         "",
         "Instructions for using related articles:",
         "- ONLY link to the exact URLs listed above. Do NOT invent, guess, or create any other internal links.",
-        "- Where this topic overlaps with a related article, embed a markdown link using the exact URL: [Post Title](/posts/slug)",
+        "- Where this topic overlaps with a related article, embed a markdown link using the exact URL: [Post Title](/articles/slug)",
         "- Draw natural comparisons where helpful (e.g. \"unlike LlamaIndex which we covered previously...\")",
         "- Do NOT re-explain concepts already covered in a linked post — refer readers there instead",
-        "- Add a '## Related Reading' section at the end listing the most relevant 2-3 links from the list above only",
+        "- Add a '## Related Reading' section at the end listing the most relevant 2-3 links from the list above only (use /articles/ URLs)",
     ]
     return "\n".join(lines)
