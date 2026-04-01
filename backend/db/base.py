@@ -33,6 +33,11 @@ class AbstractRepository(ABC):
         ...
 
     @abstractmethod
+    async def delete_post(self, post_id: str) -> bool:
+        """Permanently delete a post and its post_tags rows. Returns True if found and deleted."""
+        ...
+
+    @abstractmethod
     async def increment_views(self, post_id: str) -> None:
         """Atomically increment views counter on a post."""
         ...

@@ -90,6 +90,9 @@ export const adminApi = {
   publishPost: (id: string) =>
     apiClient.post(`/admin/posts/${id}/publish`),
 
+  deletePost: (id: string) =>
+    apiClient.delete(`/admin/posts/${id}`),
+
   deleteComment: (id: string) =>
     apiClient.delete(`/admin/comments/${id}`),
 }

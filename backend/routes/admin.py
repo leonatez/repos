@@ -313,6 +313,26 @@ async def publish_post(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.delete("/posts/{post_id}")
+async def delete_post(
+    post_id: str,
+    authorization: Optional[str] = Header(None),
+):
+    """Permanently delete a post."""
+    await get_admin_user(authorization)
+    db = get_db()
+
+    try:
+        found = await db.delete_post(post_id)
+        if not found:
+            raise HTTPException(status_code=404, detail="Post not found")
+        return {"message": "Post deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.delete("/comments/{comment_id}")
 async def delete_comment(
     comment_id: str,

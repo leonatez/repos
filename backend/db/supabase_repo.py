@@ -64,6 +64,11 @@ class SupabaseRepository(AbstractRepository):
             return None
         return result.data[0]
 
+    async def delete_post(self, post_id: str) -> bool:
+        _sb.table("post_tags").delete().eq("post_id", post_id).execute()
+        result = _sb.table("posts").delete().eq("id", post_id).execute()
+        return bool(result.data)
+
     async def increment_views(self, post_id: str) -> None:
         post = _sb.table("posts").select("views").eq("id", post_id).single().execute()
         if post.data:

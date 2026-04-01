@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import {
   Settings, Plus, Eye, Edit, CheckCircle, Clock,
-  FileText, Rss, ArrowLeft
+  FileText, Rss, ArrowLeft, Trash2
 } from 'lucide-react'
 import { adminApi } from '../../api/client'
 import { PostSummary } from '../../types'
@@ -30,6 +30,7 @@ export default function AdminPanel() {
   const [posts, setPosts] = useState<PostSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [publishing, setPublishing] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState<string | null>(null)
 
   useEffect(() => {
     if (!isAdmin) return
@@ -58,6 +59,19 @@ export default function AdminPanel() {
       console.error('Failed to publish:', err)
     } finally {
       setPublishing(null)
+    }
+  }
+
+  const handleDelete = async (postId: string, title: string) => {
+    if (!window.confirm(`Delete "${title}"?\n\nThis cannot be undone.`)) return
+    setDeleting(postId)
+    try {
+      await adminApi.deletePost(postId)
+      setPosts((prev) => prev.filter((p) => p.id !== postId))
+    } catch (err) {
+      console.error('Failed to delete:', err)
+    } finally {
+      setDeleting(null)
     }
   }
 
@@ -206,6 +220,14 @@ export default function AdminPanel() {
                             View
                           </Link>
                         )}
+                        <button
+                          onClick={() => handleDelete(post.id, post.title_en)}
+                          disabled={deleting === post.id}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg text-xs font-medium transition-colors disabled:opacity-60"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          {deleting === post.id ? '...' : 'Delete'}
+                        </button>
                       </div>
                     </td>
                   </tr>

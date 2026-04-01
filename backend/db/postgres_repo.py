@@ -129,6 +129,12 @@ class PostgresRepository(AbstractRepository):
             )
             return _row_to_dict(row)
 
+    async def delete_post(self, post_id: str) -> bool:
+        async with self._pool.acquire() as conn:
+            await conn.execute("DELETE FROM post_tags WHERE post_id = $1", uuid.UUID(post_id))
+            result = await conn.execute("DELETE FROM posts WHERE id = $1", uuid.UUID(post_id))
+            return result != "DELETE 0"
+
     async def update_post(self, post_id: str, data: dict) -> Optional[dict]:
         if not data:
             return await self.get_post_by_id(post_id)
