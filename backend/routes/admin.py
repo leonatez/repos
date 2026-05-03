@@ -240,6 +240,27 @@ async def list_all_posts(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/posts/{post_id}")
+async def get_post(
+    post_id: str,
+    authorization: Optional[str] = Header(None),
+):
+    """Get a single post by ID (admin)."""
+    await get_admin_user(authorization)
+    db = get_db()
+
+    try:
+        post = await db.get_post_by_id(post_id)
+        if not post:
+            raise HTTPException(status_code=404, detail="Post not found")
+        post["tags"] = await db.get_tags_for_post(post_id)
+        return post
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.put("/posts/{post_id}")
 async def update_post(
     post_id: str,

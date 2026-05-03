@@ -37,9 +37,9 @@ export default function EditPost() {
 
   useEffect(() => {
     if (!id || !isAdmin) return
-    adminApi.listPosts(100, 0)
+    adminApi.getPost(id)
       .then((res) => {
-        const found = res.data.items.find((p: Post) => p.id === id)
+        const found = res.data
         if (found) {
           setPost(found)
           setTitleVi(found.title_vi || '')

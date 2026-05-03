@@ -84,6 +84,9 @@ export const adminApi = {
   listPosts: (limit = 20, offset = 0) =>
     apiClient.get('/admin/posts', { params: { limit, offset } }),
 
+  getPost: (id: string) =>
+    apiClient.get(`/admin/posts/${id}`),
+
   updatePost: (id: string, data: Record<string, unknown>) =>
     apiClient.put(`/admin/posts/${id}`, data),
 
