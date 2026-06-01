@@ -4,12 +4,9 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 COPY package*.json ./
-# Resilient install: low concurrency + timeouts (flaky path to npm CDN)
-RUN npm config set maxsockets 1 \
- && npm config set fetch-retries 6 \
- && npm config set fetch-retry-mintimeout 20000 \
- && npm config set fetch-retry-maxtimeout 120000 \
- && npm config set fetch-timeout 600000
+# Force IPv4: IPv6 path to npm CDN stalls on this host (connections idle out)
+ENV NODE_OPTIONS=--dns-result-order=ipv4first
+RUN npm config set fetch-timeout 60000 && npm config set fetch-retries 5
 RUN npm ci --no-audit --no-fund
 
 COPY . .
