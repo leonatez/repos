@@ -4,9 +4,12 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 COPY package*.json ./
-# Force IPv4: IPv6 path to npm CDN stalls on this host (connections idle out)
+# npm CDN (registry.npmjs.org via Cloudflare) is unreliable from this host;
+# use a mirror on a different network path. Force IPv4 as well.
 ENV NODE_OPTIONS=--dns-result-order=ipv4first
-RUN npm config set fetch-timeout 60000 && npm config set fetch-retries 5
+RUN npm config set registry https://registry.npmmirror.com \
+ && npm config set fetch-timeout 60000 \
+ && npm config set fetch-retries 5
 RUN npm ci --no-audit --no-fund
 
 COPY . .
